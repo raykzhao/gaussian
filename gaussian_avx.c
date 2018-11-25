@@ -70,7 +70,7 @@ static const __m256d V_K_2_INV = {BINARY_SAMPLER_K_2_INV, BINARY_SAMPLER_K_2_INV
 
 static inline uint64_t load_48(const unsigned char *x)
 {
-	return ((uint64_t)(*x)) | (((uint64_t)(*(x + 1))) << 8) | (((uint64_t)(*(x + 2))) << 16) | (((uint64_t)(*(x + 3))) << 24) | (((uint64_t)(*(x + 4))) << 32) | (((uint64_t)(*(x + 5))) << 40);
+	return ((uint64_t)(*((uint16_t *)x))) | (((uint64_t)(*((uint32_t *)(x + 2)))) << 16);
 }
 
 /* constant time CDT sampler */
