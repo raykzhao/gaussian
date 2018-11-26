@@ -97,7 +97,7 @@ static inline uint64_t bernoulli_sampler(uint64_t x, unsigned char *r)
 	vx = _mm_cvtsi64_sd(_mm_setzero_pd(), x);
 	vx = _mm_mul_sd(vx, V_K_2_INV);
 	
-	vx_1 = _mm_floor_sd(_mm_setzero_pd(), vx);
+	vx_1 = _mm_floor_pd(vx);
 	vt = _mm_cvtpd_epi32(vx_1);
 	
 	/* evaluate 2^a */
@@ -116,7 +116,7 @@ static inline uint64_t bernoulli_sampler(uint64_t x, unsigned char *r)
 	vt = _mm_add_epi64(vt, V_EXP_DOUBLE);
 	vt = _mm_slli_epi64(vt, 52);
 	vres = _mm_mul_sd(_mm_castsi128_pd(vt), vsum);
-	vres = _mm_round_sd(_mm_setzero_pd(), vres, _MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC);
+	vres = _mm_round_pd(vres, _MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC);
 
 	/* compute the Bernoulli value */	
 	return (load_48(r) - _mm_cvtsd_si64(vres)) >> 63;
