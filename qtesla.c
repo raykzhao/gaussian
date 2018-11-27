@@ -232,10 +232,11 @@ void sample_gauss_poly(int32_t *x, const unsigned char *seed, int nonce)
   int16_t dmsp = (int16_t)(nonce<<8);
 
   fastrandombytes_setseed(seed);
+  fastrandombytes(seed_ex, PARAM_N*8);
 
   for (x_ind=0; x_ind<PARAM_N; x_ind++){
     if ((j+46) > (PARAM_N)){
-	  fastrandombytes((uint8_t*)buf, PARAM_N*8);
+	  fastrandombytes((unsigned char *)buf, PARAM_N*8);
       j=0;
     }
     do {
