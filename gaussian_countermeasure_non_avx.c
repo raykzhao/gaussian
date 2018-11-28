@@ -15,8 +15,9 @@
 #define CDT_LOW_MASK 0x7fffffffffffffff
 #define CDT_LENGTH 9 /* [0..tau*sigma]=[0..9] */
 
-#define BERNOULLI_ENTRY_SIZE 6 /* 48bit exp expansion */
+#define BERNOULLI_ENTRY_SIZE 8 /* 64bit Bernoulli table entry */
 #define BERNOULLI_ENTRY_NUM 21
+#define BERNOULLI_MASK 0x7fffffffffffffff
 
 /* the closest integer k such that k*sigma_0=sigma */
 #define BINARY_SAMPLER_K 254
@@ -38,34 +39,29 @@ static const uint64_t CDT[][2] = {{2200310400551559144, 3327841033070651387},
 {22489665999543, 0}};
 
 /* Bernoulli table p_i=exp(-2^i/2sigma^2) */
-static const uint64_t BER_TABLE[] = {281471952615262,
-281468928552358,
-281462880524020,
-281450784857208,
-281426595082972,
-281378221771415,
-281281500090968,
-281088156460730,
-280701867803018,
-279930882343048,
-278395258452795,
-275349236492412,
-269356810765069,
-257760360630958,
-236043730384245,
-197945278492675,
-139203611402446,
-68843225973166,
-16837694838018,
-1007222634038,
-3604218913};
+static const uint64_t BER_TABLE[] = {9223272943296909082,
+9223173850803678280,
+9222975669011078694,
+9222579318201007340,
+9221786667678813911,
+9220201571005729925,
+9217032194980845944,
+9210696710905216509,
+9198038804169290314,
+9172775152617009960,
+9122455828981195376,
+9022643781383367686,
+8826283975149786757,
+8446291497155242355,
+7734680957230936012,
+6486270885647983111,
+4561423938435359062,
+2255854828688696322,
+551737584452187600,
+33004671272150260,
+118103045332015};
 
 #define BENCHMARK_ITERATION 1000
-
-static inline uint64_t load_48(const unsigned char *x)
-{
-	return ((uint64_t)(*((uint16_t *)x))) | (((uint64_t)(*((uint32_t *)(x + 2)))) << 16);
-}
 
 /* constant time CDT sampler */
 static inline uint64_t cdt_sampler(unsigned char *r)
@@ -91,10 +87,12 @@ static inline uint64_t bernoulli_sampler(uint64_t x, unsigned char *r)
 {	
 	uint32_t i;
 	uint64_t res = 1;
+	uint64_t y;
 	
 	for (i = 0; i < BERNOULLI_ENTRY_NUM; i++)
 	{
-		res &= ((load_48(r + i * BERNOULLI_ENTRY_SIZE) - BER_TABLE[i]) >> 63) | (1 ^ (x & 0x1));
+		y = (*((uint64_t *)(r + i * BERNOULLI_ENTRY_SIZE))) & BERNOULLI_MASK;
+		res &= ((y - BER_TABLE[i]) >> 63) | (1 ^ (x & 0x1));
 		x >>= 1;
 	}
 	
