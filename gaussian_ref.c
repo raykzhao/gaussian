@@ -52,6 +52,11 @@ static const uint64_t EXP_COFF[] = {0x3e833b70ffa2c5d4,
 									0x3fe62e42fefa7fe6,
 									0x3ff0000000000000};
 								   
+/* convert between double and int64 */
+static const __m128i V_EXP_DOUBLE = {EXP_DOUBLE, 0};
+
+static const __m128d V_K_2_INV = {BINARY_SAMPLER_K_2_INV, 0};
+
 #define BENCHMARK_ITERATION 1000
 
 static inline uint64_t load_48(const unsigned char *x)
@@ -90,25 +95,25 @@ static inline uint64_t bernoulli_sampler(uint64_t x, unsigned char *r)
 	/* 2^x=2^(floor(x)+a)=2^(floor(x))*2^a, where a is in [0,1]
 	 * we only evaluate 2^a by using a polynomial */	
 	vx = _mm_cvtsi64_sd(_mm_setzero_pd(), x);
-	vx = _mm_mul_sd(vx, _mm_set1_pd(BINARY_SAMPLER_K_2_INV));
+	vx = _mm_mul_sd(vx, V_K_2_INV);
 	
 	vx_1 = _mm_floor_pd(vx);
 	vt = _mm_cvtpd_epi32(vx_1);
 	
 	/* evaluate 2^a */
 	vx_2 = _mm_sub_sd(vx, vx_1);
-	vsum = _mm_add_sd(_mm_mul_sd(_mm_load1_pd((double *)(EXP_COFF)), vx_2), _mm_load1_pd((double *)(EXP_COFF + 1)));
-	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_load1_pd((double *)(EXP_COFF + 2)));
-	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_load1_pd((double *)(EXP_COFF + 3)));
-	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_load1_pd((double *)(EXP_COFF + 4)));
-	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_load1_pd((double *)(EXP_COFF + 5)));
-	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_load1_pd((double *)(EXP_COFF + 6)));
-	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_load1_pd((double *)(EXP_COFF + 7)));
-	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_load1_pd((double *)(EXP_COFF + 8)));
-	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_load1_pd((double *)(EXP_COFF + 9)));
+	vsum = _mm_add_sd(_mm_mul_sd(_mm_castsi128_pd(_mm_cvtsi64x_si128(EXP_COFF[0])), vx_2), _mm_castsi128_pd(_mm_cvtsi64x_si128(EXP_COFF[1])));
+	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_castsi128_pd(_mm_cvtsi64x_si128(EXP_COFF[2])));
+	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_castsi128_pd(_mm_cvtsi64x_si128(EXP_COFF[3])));
+	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_castsi128_pd(_mm_cvtsi64x_si128(EXP_COFF[4])));
+	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_castsi128_pd(_mm_cvtsi64x_si128(EXP_COFF[5])));
+	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_castsi128_pd(_mm_cvtsi64x_si128(EXP_COFF[6])));
+	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_castsi128_pd(_mm_cvtsi64x_si128(EXP_COFF[7])));
+	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_castsi128_pd(_mm_cvtsi64x_si128(EXP_COFF[8])));
+	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_castsi128_pd(_mm_cvtsi64x_si128(EXP_COFF[9])));
 	
 	/* combine to compute 2^x */
-	vt = _mm_add_epi64(vt, _mm_set1_epi64x(EXP_DOUBLE));
+	vt = _mm_add_epi64(vt, V_EXP_DOUBLE);
 	vt = _mm_slli_epi64(vt, 52);
 	vres = _mm_mul_sd(_mm_castsi128_pd(vt), vsum);
 	vres = _mm_round_pd(vres, _MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC);
