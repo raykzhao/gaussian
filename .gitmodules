@@ -1,6 +1,0 @@
-[submodule "applications/qTesla"]
-	path = applications/qTesla
-	url = https://github.com/raykzhao/qTesla
-[submodule "applications/falcon"]
-	path = applications/falcon
-	url = https://github.com/raykzhao/falcon
