@@ -15,7 +15,7 @@
 #define CDT_LOW_MASK 0x7fffffffffffffff
 #define CDT_LENGTH 9 /* [0..tau*sigma]=[0..9] */
 
-#define BERNOULLI_ENTRY_SIZE 6 /* 48bit exp expansion */
+#define BERNOULLI_ENTRY_SIZE 8 /* 64bit exp expansion */
 
 /* the closest integer k such that k*sigma_0=sigma */
 #define BINARY_SAMPLER_K 254
@@ -23,7 +23,7 @@
 /* -1/k^2 */
 #define BINARY_SAMPLER_K_2_INV (-1.0/(BINARY_SAMPLER_K * BINARY_SAMPLER_K))
 
-#define EXP_PRECISION 48
+#define EXP_PRECISION 63 /* l=63 */
 #define EXP_DOUBLE (1023 + EXP_PRECISION)
 
 #define UNIFORM_SIZE 1
@@ -58,11 +58,6 @@ static const __m128i V_EXP_DOUBLE = {EXP_DOUBLE, 0};
 static const __m128d V_K_2_INV = {BINARY_SAMPLER_K_2_INV, 0};
 
 #define BENCHMARK_ITERATION 1000
-
-static inline uint64_t load_48(const unsigned char *x)
-{
-	return ((uint64_t)(*((uint16_t *)x))) | (((uint64_t)(*((uint32_t *)(x + 2)))) << 16);
-}
 
 /* constant time CDT sampler */
 static inline uint64_t cdt_sampler(unsigned char *r)
@@ -119,7 +114,7 @@ static inline uint64_t bernoulli_sampler(uint64_t x, unsigned char *r)
 	vres = _mm_round_pd(vres, _MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC);
 
 	/* compute the Bernoulli value */	
-	return (load_48(r) - _mm_cvtsd_si64(vres)) >> 63;
+	return (((*((uint64_t *)r)) & CDT_LOW_MASK) - _mm_cvtsd_si64(vres)) >> 63;
 }
 
 /* make sure that Pr(rerun the PRG)<=2^(-64) */

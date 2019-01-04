@@ -15,7 +15,7 @@
 #define CDT_LOW_MASK 0x7fffffffffffffff
 #define CDT_LENGTH 9 /* [0..tau*sigma]=[0..9] */
 
-#define BERNOULLI_ENTRY_SIZE 6 /* 48bit exp expansion */
+#define BERNOULLI_ENTRY_SIZE 8 /* 64bit exp expansion */
 
 /* the closest integer k such that k*sigma_0=sigma */
 #define BINARY_SAMPLER_K 254
@@ -23,7 +23,7 @@
 /* -1/k^2 */
 #define BINARY_SAMPLER_K_2_INV (-1.0/(BINARY_SAMPLER_K * BINARY_SAMPLER_K))
 
-#define EXP_PRECISION 48
+#define EXP_PRECISION 63 /* l=63 */
 #define EXP_DOUBLE (1023 + EXP_PRECISION)
 
 #define UNIFORM_SIZE 1
@@ -67,11 +67,6 @@ static const __m256d V_DOUBLE_INT64 = {0x0018000000000000, 0x0018000000000000, 0
 static const __m256d V_K_2_INV = {BINARY_SAMPLER_K_2_INV, BINARY_SAMPLER_K_2_INV, BINARY_SAMPLER_K_2_INV, BINARY_SAMPLER_K_2_INV};
 
 #define BENCHMARK_ITERATION 1000
-
-static inline uint64_t load_48(const unsigned char *x)
-{
-	return ((uint64_t)(*((uint16_t *)x))) | (((uint64_t)(*((uint32_t *)(x + 2)))) << 16);
-}
 
 /* constant time CDT sampler */
 static inline __m256i cdt_sampler(unsigned char *r)
@@ -150,7 +145,8 @@ static inline void bernoulli_sampler(uint64_t *b, __m256i x, unsigned char *r)
 	v_exp_x = _mm256_sub_epi64(_mm256_castpd_si256(vres), _mm256_castpd_si256(V_DOUBLE_INT64));		
 
 	/* compute the Bernoulli value */
-	k = _mm256_set_epi64x(load_48(r + 3 * BERNOULLI_ENTRY_SIZE), load_48(r + 2 * BERNOULLI_ENTRY_SIZE), load_48(r + BERNOULLI_ENTRY_SIZE), load_48(r));
+	k = _mm256_load_si256((__m256i *)r);
+	k = _mm256_and_si256(k, V_CDT_LOW_MASK);
 	k = _mm256_sub_epi64(k, v_exp_x);
 	k = _mm256_srli_epi64(k, 63);
 	
@@ -187,7 +183,7 @@ void gaussian_sampler(int64_t *sample, uint32_t slen)
 	uint64_t z[8] __attribute__ ((aligned (32)));
 	uint64_t b[8] __attribute__ ((aligned (32)));
 	
-	unsigned char r[2 * (BASE_TABLE_SIZE + BERNOULLI_TABLE_SIZE) + UNIFORM_REJ * UNIFORM_SIZE + 1];
+	unsigned char r[2 * (BASE_TABLE_SIZE + BERNOULLI_TABLE_SIZE) + UNIFORM_REJ * UNIFORM_SIZE + 1] __attribute__ ((aligned (32)));
 	unsigned char *r1;
 	
 	uint32_t i = 8, j = 0;
