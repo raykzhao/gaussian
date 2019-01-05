@@ -29,7 +29,7 @@
 #define R_MANTISSA_MASK ((1LL << R_MANTISSA_PRECISION) - 1)
 #define R_EXPONENT_L (8 * BERNOULLI_ENTRY_SIZE - R_MANTISSA_PRECISION)
 
-#define DOUBLE_ZERO (1023LL << 52)
+#define DOUBLE_ONE (1023LL << 52)
 
 #define UNIFORM_SIZE 1
 #define UNIFORM_REJ 20
@@ -57,7 +57,6 @@ static const uint64_t EXP_COFF[] = {0x3e833b70ffa2c5d4,
 									0x3fe62e42fefa7fe6,
 									0x3ff0000000000000};
 								   
-/* convert between double and int64 */
 static const __m128d V_K_2_INV = {BINARY_SAMPLER_K_2_INV, 0};
 
 #define BENCHMARK_ITERATION 1000
@@ -124,7 +123,7 @@ static inline uint64_t bernoulli_sampler(uint64_t x, unsigned char *r)
 	r_exponent = ((*((uint64_t *)r)) >> R_MANTISSA_PRECISION) |  (((uint64_t)(r[8])) << (64 - R_MANTISSA_PRECISION));
 	
 	/* (res == 1.0) || ((r_mantissa < res_mantissa) && (r_exponent < (1 << res_exponent))) */
-	return ((1LL << 63) ^ ((res - DOUBLE_ZERO) | (DOUBLE_ZERO - res))) | ((r_mantissa - res_mantissa) & (r_exponent - (1LL << res_exponent)));
+	return ((1LL << 63) ^ ((res - DOUBLE_ONE) | (DOUBLE_ONE - res))) | ((r_mantissa - res_mantissa) & (r_exponent - (1LL << res_exponent)));
 }
 
 /* make sure that Pr(rerun the PRG)<=2^(-64) */
