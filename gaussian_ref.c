@@ -15,7 +15,7 @@
 #define CDT_LOW_MASK 0x7fffffffffffffff
 #define CDT_LENGTH 9 /* [0..tau*sigma]=[0..9] */
 
-#define BERNOULLI_ENTRY_SIZE 6 /* 48bit exp expansion */
+#define BERNOULLI_ENTRY_SIZE 9 /* 72bit randomness */
 
 /* the closest integer k such that k*sigma_0=sigma */
 #define BINARY_SAMPLER_K 254
@@ -23,8 +23,13 @@
 /* -1/k^2 */
 #define BINARY_SAMPLER_K_2_INV (-1.0/(BINARY_SAMPLER_K * BINARY_SAMPLER_K))
 
-#define EXP_PRECISION 48
-#define EXP_DOUBLE (1023 + EXP_PRECISION)
+#define EXP_MANTISSA_PRECISION 52
+#define EXP_MANTISSA_MASK ((1LL << EXP_MANTISSA_PRECISION) - 1)
+#define R_MANTISSA_PRECISION (EXP_MANTISSA_PRECISION + 1)
+#define R_MANTISSA_MASK ((1LL << R_MANTISSA_PRECISION) - 1)
+#define R_EXPONENT_L (8 * BERNOULLI_ENTRY_SIZE - R_MANTISSA_PRECISION)
+
+#define DOUBLE_ZERO (1023LL << 52)
 
 #define UNIFORM_SIZE 1
 #define UNIFORM_REJ 20
@@ -53,23 +58,15 @@ static const uint64_t EXP_COFF[] = {0x3e833b70ffa2c5d4,
 									0x3ff0000000000000};
 								   
 /* convert between double and int64 */
-static const __m128i V_EXP_DOUBLE = {EXP_DOUBLE, 0};
-
 static const __m128d V_K_2_INV = {BINARY_SAMPLER_K_2_INV, 0};
 
 #define BENCHMARK_ITERATION 1000
-
-static inline uint64_t load_48(const unsigned char *x)
-{
-	return ((uint64_t)(*((uint16_t *)x))) | (((uint64_t)(*((uint32_t *)(x + 2)))) << 16);
-}
 
 /* constant time CDT sampler */
 static inline uint64_t cdt_sampler(unsigned char *r)
 {
 	uint64_t x = 0;
 	uint64_t r1, r2;
-	
 	uint32_t i;
 
 	r1 = (*((uint64_t *)r)) & CDT_LOW_MASK;
@@ -77,7 +74,7 @@ static inline uint64_t cdt_sampler(unsigned char *r)
 
 	for (i = 0; i < CDT_LENGTH; i++)
 	{
-		x += (((r1 - CDT[i][0]) >> 63) & (1 ^ (((r2 - CDT[i][1]) | (CDT[i][1] - r2)) >> 63))) | ((r2 - CDT[i][1]) >> 63);
+		x += (((r1 - CDT[i][0]) & ((1LL << 63) ^ ((r2 - CDT[i][1]) | (CDT[i][1] - r2)))) | (r2 - CDT[i][1])) >> 63;
 	}
 
 	return x;
@@ -89,8 +86,11 @@ static inline uint64_t cdt_sampler(unsigned char *r)
  * we use a polynomial to directly evaluate 2^(-x/k^2) */
 static inline uint64_t bernoulli_sampler(uint64_t x, unsigned char *r)
 {	
-	__m128d vx, vx_1, vx_2, vsum, vres;
-	__m128i vt;
+	__m128d vx, vx_1, vx_2, vsum;
+	__m128i vt, vres;
+
+	uint64_t res, res_mantissa, res_exponent;
+	uint64_t r_mantissa, r_exponent;
 
 	/* 2^x=2^(floor(x)+a)=2^(floor(x))*2^a, where a is in [0,1]
 	 * we only evaluate 2^a by using a polynomial */	
@@ -99,6 +99,7 @@ static inline uint64_t bernoulli_sampler(uint64_t x, unsigned char *r)
 	
 	vx_1 = _mm_floor_pd(vx);
 	vt = _mm_cvtpd_epi32(vx_1);
+	vt = _mm_slli_epi64(vt, 52);
 	
 	/* evaluate 2^a */
 	vx_2 = _mm_sub_sd(vx, vx_1);
@@ -113,13 +114,17 @@ static inline uint64_t bernoulli_sampler(uint64_t x, unsigned char *r)
 	vsum = _mm_add_sd(_mm_mul_sd(vsum, vx_2), _mm_castsi128_pd(_mm_cvtsi64x_si128(EXP_COFF[9])));
 	
 	/* combine to compute 2^x */
-	vt = _mm_add_epi64(vt, V_EXP_DOUBLE);
-	vt = _mm_slli_epi64(vt, 52);
-	vres = _mm_mul_sd(_mm_castsi128_pd(vt), vsum);
-	vres = _mm_round_pd(vres, _MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC);
-
-	/* compute the Bernoulli value */	
-	return (load_48(r) - _mm_cvtsd_si64(vres)) >> 63;
+	vres = _mm_add_epi64(vt, _mm_castpd_si128(vsum));
+	_mm_storel_epi64((__m128i *)(&res), vres);
+	
+	res_mantissa = (res & EXP_MANTISSA_MASK) | (1LL << EXP_MANTISSA_PRECISION);
+	res_exponent = R_EXPONENT_L - 1023 + 1 + (res >> EXP_MANTISSA_PRECISION); 
+	
+	r_mantissa = (*((uint64_t *)r)) & R_MANTISSA_MASK;
+	r_exponent = ((*((uint64_t *)r)) >> R_MANTISSA_PRECISION) |  (((uint64_t)(r[8])) << (64 - R_MANTISSA_PRECISION));
+	
+	/* (res == 1.0) || ((r_mantissa < res_mantissa) && (r_exponent < (1 << res_exponent))) */
+	return ((1LL << 63) ^ ((res - DOUBLE_ZERO) | (DOUBLE_ZERO - res))) | ((r_mantissa - res_mantissa) & (r_exponent - (1LL << res_exponent)));
 }
 
 /* make sure that Pr(rerun the PRG)<=2^(-64) */
@@ -170,7 +175,7 @@ void gaussian_sampler(int64_t *sample, uint32_t slen)
 			
 			k = (r[8 * (CDT_ENTRY_SIZE + BERNOULLI_ENTRY_SIZE) + UNIFORM_REJ * UNIFORM_SIZE] >> i) & 0x1;
 			i++;			
-		} while (1 ^ (b & (((z | -z) | (k | -k)) >> 63))); /* rejection condition: b=0 or ((b=1) && (z=0) && (k=0)) */
+		} while (1 ^ ((b & ((z | -z) | (k | -k))) >> 63)); /* rejection condition: b=0 or ((b=1) && (z=0) && (k=0)) */
 		
 		sample[j++] = z * (1 ^ ((-k) & 0xfffffffffffffffe)); /* sample=z*(-1)^k */
 	}
