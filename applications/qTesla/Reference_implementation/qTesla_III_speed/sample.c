@@ -21,13 +21,18 @@
 #define CDT_LOW_MASK 0x7fffffffffffffff
 #define CDT_LENGTH 9 /* [0..tau*sigma]=[0..9] */
 
-#define BERNOULLI_ENTRY_SIZE 6 /* 48bit exp expansion */
+#define BERNOULLI_ENTRY_SIZE 9 /* 72bit randomness */
 
 /* -1/k^2 */
 #define BINARY_SAMPLER_K_2_INV (-1.0/(PARAM_Xi * PARAM_Xi))
 
-#define EXP_PRECISION 48
-#define EXP_DOUBLE (1023 + EXP_PRECISION)
+#define EXP_MANTISSA_PRECISION 52
+#define EXP_MANTISSA_MASK ((1LL << EXP_MANTISSA_PRECISION) - 1)
+#define R_MANTISSA_PRECISION (EXP_MANTISSA_PRECISION + 1)
+#define R_MANTISSA_MASK ((1LL << R_MANTISSA_PRECISION) - 1)
+#define R_EXPONENT_L (8 * BERNOULLI_ENTRY_SIZE - R_MANTISSA_PRECISION)
+
+#define DOUBLE_ONE (1023LL << 52)
 
 #define UNIFORM_SIZE 1
 #define UNIFORM_REJ 23
@@ -66,10 +71,15 @@ static const __m256i EXP_COFF[] = {{0x3e833b70ffa2c5d4, 0x3e833b70ffa2c5d4, 0x3e
 								   {0x3fe62e42fefa7fe6, 0x3fe62e42fefa7fe6, 0x3fe62e42fefa7fe6, 0x3fe62e42fefa7fe6},
 								   {0x3ff0000000000000, 0x3ff0000000000000, 0x3ff0000000000000, 0x3ff0000000000000}};
 								   
-/* convert between double and int64 */
-static const __m256i V_EXP_DOUBLE = {EXP_DOUBLE, EXP_DOUBLE, EXP_DOUBLE, EXP_DOUBLE};
 static const __m256d V_INT64_DOUBLE = {0x0010000000000000, 0x0010000000000000, 0x0010000000000000, 0x0010000000000000};
 static const __m256d V_DOUBLE_INT64 = {0x0018000000000000, 0x0018000000000000, 0x0018000000000000, 0x0018000000000000};
+
+static const __m256i V_EXP_MANTISSA_MASK = {EXP_MANTISSA_MASK, EXP_MANTISSA_MASK, EXP_MANTISSA_MASK, EXP_MANTISSA_MASK};
+static const __m256i V_RES_MANTISSA = {1LL << EXP_MANTISSA_PRECISION, 1LL << EXP_MANTISSA_PRECISION, 1LL << EXP_MANTISSA_PRECISION, 1LL << EXP_MANTISSA_PRECISION};
+static const __m256i V_RES_EXPONENT = {R_EXPONENT_L - 1023 + 1, R_EXPONENT_L - 1023 + 1, R_EXPONENT_L - 1023 + 1, R_EXPONENT_L - 1023 + 1};
+static const __m256i V_R_MANTISSA_MASK = {R_MANTISSA_MASK, R_MANTISSA_MASK, R_MANTISSA_MASK, R_MANTISSA_MASK};
+static const __m256i V_1 = {1, 1, 1, 1};
+static const __m256i V_DOUBLE_ONE = {DOUBLE_ONE, DOUBLE_ONE, DOUBLE_ONE, DOUBLE_ONE};
 
 static const __m256d V_K_2_INV = {BINARY_SAMPLER_K_2_INV, BINARY_SAMPLER_K_2_INV, BINARY_SAMPLER_K_2_INV, BINARY_SAMPLER_K_2_INV};
 
@@ -147,11 +157,6 @@ void encode_c(uint32_t *pos_list, int16_t *sign_list, unsigned char *c_bin)
 }
 
 
-static inline uint64_t load_48(const unsigned char *x)
-{
-	return ((uint64_t)(*((uint16_t *)x))) | (((uint64_t)(*((uint32_t *)(x + 2)))) << 16);
-}
-
 /* constant time CDT sampler */
 static inline __m256i cdt_sampler(unsigned char *r)
 {
@@ -172,15 +177,13 @@ static inline __m256i cdt_sampler(unsigned char *r)
 	for (i = 0; i < CDT_LENGTH; i++)
 	{
 		r1_lt_cdt0 = _mm256_sub_epi64(r1, V_CDT[i][0]);
-		r1_lt_cdt0 = _mm256_srli_epi64(r1_lt_cdt0, 63);
 
 		r2_lt_cdt1 = _mm256_sub_epi64(r2, V_CDT[i][1]);
-		r2_lt_cdt1 = _mm256_srli_epi64(r2_lt_cdt1, 63);
 		r2_eq_cdt1 = _mm256_cmpeq_epi64(r2, V_CDT[i][1]);
-		r2_eq_cdt1 = _mm256_srli_epi64(r2_eq_cdt1, 63);
 
 		b = _mm256_and_si256(r1_lt_cdt0, r2_eq_cdt1);
 		b = _mm256_or_si256(b, r2_lt_cdt1);
+		b = _mm256_srli_epi64(b, 63);
 		
 		x = _mm256_add_epi64(x, b);
 	}
@@ -194,8 +197,8 @@ static inline __m256i cdt_sampler(unsigned char *r)
  * we use a polynomial to directly evaluate 2^(-x/k^2) */
 static inline void bernoulli_sampler(uint64_t *b, __m256i x, unsigned char *r)
 {	
-	__m256d vx, vx_1, vx_2, vsum, vres;
-	__m256i vt, v_exp_x, k;
+	__m256d vx, vx_1, vx_2, vsum;
+	__m256i vt, k, vres, vres_mantissa, vres_exponent, vr_mantissa, vr_exponent, vr_exponent2, vres_eq_1, vr_lt_vres_mantissa, vr_lt_vres_exponent;
 
 	/* 2^x=2^(floor(x)+a)=2^(floor(x))*2^a, where a is in [0,1]
 	 * we only evaluate 2^a by using a polynomial */
@@ -206,6 +209,7 @@ static inline void bernoulli_sampler(uint64_t *b, __m256i x, unsigned char *r)
 	vx_1 = _mm256_floor_pd(vx);
 	vx_2 = _mm256_add_pd(vx_1, V_DOUBLE_INT64);
 	vt = _mm256_sub_epi64(_mm256_castpd_si256(vx_2), _mm256_castpd_si256(V_DOUBLE_INT64));	
+	vt = _mm256_slli_epi64(vt, 52);
 
 	/* evaluate 2^a */
 	vx_2 = _mm256_sub_pd(vx, vx_1);
@@ -220,18 +224,30 @@ static inline void bernoulli_sampler(uint64_t *b, __m256i x, unsigned char *r)
 	vsum = _mm256_fmadd_pd(vsum, vx_2, _mm256_castsi256_pd(EXP_COFF[9]));
 	
 	/* combine to compute 2^x */
-	vt = _mm256_add_epi64(vt, V_EXP_DOUBLE);
-	vt = _mm256_slli_epi64(vt, 52);
-	vres = _mm256_mul_pd(_mm256_castsi256_pd(vt), vsum);
-	vres = _mm256_round_pd(vres, _MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC);
-
-	vres = _mm256_add_pd(vres, V_DOUBLE_INT64);
-	v_exp_x = _mm256_sub_epi64(_mm256_castpd_si256(vres), _mm256_castpd_si256(V_DOUBLE_INT64));		
+	vres = _mm256_add_epi64(vt, _mm256_castpd_si256(vsum));
 
 	/* compute the Bernoulli value */
-	k = _mm256_set_epi64x(load_48(r + 3 * BERNOULLI_ENTRY_SIZE), load_48(r + 2 * BERNOULLI_ENTRY_SIZE), load_48(r + BERNOULLI_ENTRY_SIZE), load_48(r));
-	k = _mm256_sub_epi64(k, v_exp_x);
-	k = _mm256_srli_epi64(k, 63);
+	vres_mantissa = _mm256_and_si256(vres, V_EXP_MANTISSA_MASK);
+	vres_mantissa = _mm256_or_si256(vres_mantissa, V_RES_MANTISSA);
+	
+	vres_exponent = _mm256_srli_epi64(vres, EXP_MANTISSA_PRECISION);
+	vres_exponent = _mm256_add_epi64(vres_exponent, V_RES_EXPONENT);
+	vres_exponent = _mm256_sllv_epi64(V_1, vres_exponent);
+	
+	vr_mantissa = _mm256_load_si256((__m256i *)r);
+	vr_exponent = _mm256_srli_epi64(vr_mantissa, R_MANTISSA_PRECISION);
+	vr_mantissa = _mm256_and_si256(vr_mantissa, V_R_MANTISSA_MASK);
+	vr_exponent2 = _mm256_set_epi64x(r[35], r[34], r[33], r[32]);
+	vr_exponent2 = _mm256_slli_epi64(vr_exponent2, 64 - R_MANTISSA_PRECISION);
+	vr_exponent = _mm256_or_si256(vr_exponent, vr_exponent2);
+
+	/* (res == 1.0) || ((r_mantissa < res_mantissa) && (r_exponent < (1 << res_exponent))) */
+	vres_eq_1 = _mm256_cmpeq_epi64(vres, V_DOUBLE_ONE);
+	vr_lt_vres_mantissa = _mm256_sub_epi64(vr_mantissa, vres_mantissa);	
+	vr_lt_vres_exponent = _mm256_sub_epi64(vr_exponent, vres_exponent);
+	
+	k = _mm256_and_si256(vr_lt_vres_mantissa, vr_lt_vres_exponent);
+	k = _mm256_or_si256(k, vres_eq_1);
 	
 	_mm256_store_si256((__m256i *)(b), k);
 }
@@ -269,7 +285,7 @@ static void gaussian_sampler(poly sample, uint32_t slen)
 	uint64_t z[8] __attribute__ ((aligned (32)));
 	uint64_t b[8] __attribute__ ((aligned (32)));
 	
-	unsigned char r[2 * (BASE_TABLE_SIZE + BERNOULLI_TABLE_SIZE) + UNIFORM_REJ * UNIFORM_SIZE + 1];
+	unsigned char r[2 * (BASE_TABLE_SIZE + BERNOULLI_TABLE_SIZE) + UNIFORM_REJ * UNIFORM_SIZE + 1] __attribute__ ((aligned (32)));
 	unsigned char *r1;
 	
 	uint32_t i = 8, j = 0;
@@ -311,7 +327,7 @@ static void gaussian_sampler(poly sample, uint32_t slen)
 			
 			k = (r[2 * (BASE_TABLE_SIZE + BERNOULLI_TABLE_SIZE) + UNIFORM_REJ * UNIFORM_SIZE] >> i) & 0x1;
 			i++;			
-		} while (1 ^ (b[i - 1] & (((z[i - 1] | -z[i - 1]) | (k | -k)) >> 63))); /* rejection condition: b=0 or ((b=1) && (z=0) && (k=0)) */
+		} while (1 ^ ((b[i - 1] & ((z[i - 1] | -z[i - 1]) | (k | -k))) >> 63)); /* rejection condition: b=0 or ((b=1) && (z=0) && (k=0)) */
 		
 		sample[j++] = z[i - 1] * (1 ^ ((-k) & 0xfffffffffffffffe)); /* sample=z*(-1)^k */
 	}
