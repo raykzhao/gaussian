@@ -155,7 +155,7 @@ static inline void bernoulli_sampler(uint64_t *b, __m256i x, unsigned char *r)
 	vres_exponent = _mm256_add_epi64(vres_exponent, V_RES_EXPONENT);
 	vres_exponent = _mm256_sllv_epi64(V_1, vres_exponent);
 	
-	vr_mantissa = _mm256_load_si256((__m256i *)r);
+	vr_mantissa = _mm256_loadu_si256((__m256i *)r);
 	vr_exponent = _mm256_srli_epi64(vr_mantissa, R_MANTISSA_PRECISION);
 	vr_mantissa = _mm256_and_si256(vr_mantissa, V_R_MANTISSA_MASK);
 	vr_exponent2 = _mm256_set_epi64x(r[35], r[34], r[33], r[32]);
