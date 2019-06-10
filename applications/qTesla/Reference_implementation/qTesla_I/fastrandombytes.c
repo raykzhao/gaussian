@@ -6,61 +6,79 @@
 #include <string.h>
 #include <x86intrin.h>
 
-static __m128i round_key[11];
+static __m128i round_key[15];
 static __m128i iv;
 static const __m128i ONE = {1, 0};
 
-static inline __m128i AES_128_ASSIST (__m128i temp1, __m128i temp2)
+static inline void KEY_256_ASSIST_1(__m128i* temp1, __m128i * temp2)
 {
-	__m128i temp3;
-	temp2 = _mm_shuffle_epi32 (temp2 ,0xff);
-	temp3 = _mm_slli_si128 (temp1, 0x4);
-	temp1 = _mm_xor_si128 (temp1, temp3);
-	temp3 = _mm_slli_si128 (temp3, 0x4);
-	temp1 = _mm_xor_si128 (temp1, temp3);
-	temp3 = _mm_slli_si128 (temp3, 0x4);
-	temp1 = _mm_xor_si128 (temp1, temp3);
-	temp1 = _mm_xor_si128 (temp1, temp2);
-	return temp1;
+	__m128i temp4;
+	*temp2 = _mm_shuffle_epi32(*temp2, 0xff);
+	temp4 = _mm_slli_si128(*temp1, 0x4);
+	*temp1 = _mm_xor_si128(*temp1, temp4);
+	temp4 = _mm_slli_si128(temp4, 0x4);
+	*temp1 = _mm_xor_si128(*temp1, temp4);
+	temp4 = _mm_slli_si128(temp4, 0x4);
+	*temp1 = _mm_xor_si128(*temp1, temp4);
+	*temp1 = _mm_xor_si128(*temp1, *temp2);
 }
 
-/* round_key <-- aes128_key_expansion(randomness), iv <-- 0 */
+static inline void KEY_256_ASSIST_2(__m128i* temp1, __m128i * temp3)
+{
+	__m128i temp2,temp4;
+	temp4 = _mm_aeskeygenassist_si128(*temp1, 0x0);
+	temp2 = _mm_shuffle_epi32(temp4, 0xaa);
+	temp4 = _mm_slli_si128(*temp3, 0x4);
+	*temp3 = _mm_xor_si128(*temp3, temp4);
+	temp4 = _mm_slli_si128(temp4, 0x4);
+	*temp3 = _mm_xor_si128(*temp3, temp4);
+	temp4 = _mm_slli_si128(temp4, 0x4);
+	*temp3 = _mm_xor_si128(*temp3, temp4);
+	*temp3 = _mm_xor_si128(*temp3, temp2);
+}
+
+/* round_key <-- aes256_key_expansion(randomness), iv <-- 0 */
 void fastrandombytes_setseed(const unsigned char *randomness, int nonce)
 {
-	__m128i temp1, temp2;
+	__m128i temp1, temp2, temp3;
 
 	temp1 = _mm_loadu_si128((__m128i*)randomness);
+	temp3 = _mm_loadu_si128((__m128i*)(randomness+16));
 	round_key[0] = temp1;
-	temp2 = _mm_aeskeygenassist_si128 (temp1 ,0x1);
-	temp1 = AES_128_ASSIST(temp1, temp2);
-	round_key[1] = temp1;
-	temp2 = _mm_aeskeygenassist_si128 (temp1,0x2);
-	temp1 = AES_128_ASSIST(temp1, temp2);
-	round_key[2] = temp1;
-	temp2 = _mm_aeskeygenassist_si128 (temp1,0x4);
-	temp1 = AES_128_ASSIST(temp1, temp2);
-	round_key[3] = temp1;
-	temp2 = _mm_aeskeygenassist_si128 (temp1,0x8);
-	temp1 = AES_128_ASSIST(temp1, temp2);
-	round_key[4] = temp1;
-	temp2 = _mm_aeskeygenassist_si128 (temp1,0x10);
-	temp1 = AES_128_ASSIST(temp1, temp2);
-	round_key[5] = temp1;
-	temp2 = _mm_aeskeygenassist_si128 (temp1,0x20);
-	temp1 = AES_128_ASSIST(temp1, temp2);
-	round_key[6] = temp1;
-	temp2 = _mm_aeskeygenassist_si128 (temp1,0x40);
-	temp1 = AES_128_ASSIST(temp1, temp2);
-	round_key[7] = temp1;
-	temp2 = _mm_aeskeygenassist_si128 (temp1,0x80);
-	temp1 = AES_128_ASSIST(temp1, temp2);
-	round_key[8] = temp1;
-	temp2 = _mm_aeskeygenassist_si128 (temp1,0x1b);
-	temp1 = AES_128_ASSIST(temp1, temp2);
-	round_key[9] = temp1;
-	temp2 = _mm_aeskeygenassist_si128 (temp1,0x36);
-	temp1 = AES_128_ASSIST(temp1, temp2);
-	round_key[10] = temp1;
+	round_key[1] = temp3;
+	temp2 = _mm_aeskeygenassist_si128(temp3,0x01);
+	KEY_256_ASSIST_1(&temp1, &temp2);
+	round_key[2]=temp1;
+	KEY_256_ASSIST_2(&temp1, &temp3);
+	round_key[3]=temp3;
+	temp2 = _mm_aeskeygenassist_si128(temp3,0x02);
+	KEY_256_ASSIST_1(&temp1, &temp2);
+	round_key[4]=temp1;
+	KEY_256_ASSIST_2(&temp1, &temp3);
+	round_key[5]=temp3;
+	temp2 = _mm_aeskeygenassist_si128(temp3,0x04);
+	KEY_256_ASSIST_1(&temp1, &temp2);
+	round_key[6]=temp1;
+	KEY_256_ASSIST_2(&temp1, &temp3);
+	round_key[7]=temp3;
+	temp2 = _mm_aeskeygenassist_si128(temp3,0x08);
+	KEY_256_ASSIST_1(&temp1, &temp2);
+	round_key[8]=temp1;
+	KEY_256_ASSIST_2(&temp1, &temp3);
+	round_key[9]=temp3;
+	temp2 = _mm_aeskeygenassist_si128(temp3,0x10);
+	KEY_256_ASSIST_1(&temp1, &temp2);
+	round_key[10]=temp1;
+	KEY_256_ASSIST_2(&temp1, &temp3);
+	round_key[11]=temp3;
+	temp2 = _mm_aeskeygenassist_si128(temp3,0x20);
+	KEY_256_ASSIST_1(&temp1, &temp2);
+	round_key[12]=temp1;
+	KEY_256_ASSIST_2(&temp1, &temp3);
+	round_key[13]=temp3;
+	temp2 = _mm_aeskeygenassist_si128(temp3,0x40);
+	KEY_256_ASSIST_1(&temp1, &temp2);
+	round_key[14]=temp1;
 
 	iv = _mm_set_epi64x(nonce, 0);
 }
@@ -79,13 +97,17 @@ static inline void AES_ctr_round(unsigned char *out)
 	tmp = _mm_aesenc_si128(tmp,round_key[7]);
 	tmp = _mm_aesenc_si128(tmp,round_key[8]);
 	tmp = _mm_aesenc_si128(tmp,round_key[9]);
-	tmp = _mm_aesenclast_si128(tmp,round_key[10]);
+	tmp = _mm_aesenc_si128(tmp,round_key[10]);
+	tmp = _mm_aesenc_si128(tmp,round_key[11]);
+	tmp = _mm_aesenc_si128(tmp,round_key[12]);
+	tmp = _mm_aesenc_si128(tmp,round_key[13]);
+	tmp = _mm_aesenclast_si128(tmp,round_key[14]);
 	_mm_storeu_si128((__m128i*)out,tmp);
 
 	iv = _mm_add_epi32(iv, ONE);
 }
 
-/* r <-- aes128_ctr(round_key, iv, rlen) */
+/* r <-- aes256_ctr(round_key, iv, rlen) */
 void fastrandombytes(unsigned char *r, unsigned long long rlen)
 {
 	unsigned char ct[16];
