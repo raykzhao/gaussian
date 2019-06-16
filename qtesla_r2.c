@@ -194,7 +194,7 @@ static inline void knuthMergeExchangeG(int32_t a[/*n*/], size_t n)
 }
 
 
-static void kmxGauss(int32_t z[/*CHUNK_SIZE*/], const unsigned char *seed, int nonce) 
+static void __attribute__ ((noinline)) kmxGauss(int32_t z[/*CHUNK_SIZE*/], const unsigned char *seed, int nonce) 
 { // Generate CHUNK_SIZE samples from the normal distribution in constant-time
     sdigit_t sampk[(CHUNK_SIZE + CDT_ROWS)*CDT_COLS];
     int32_t sampg[CHUNK_SIZE + CDT_ROWS];
