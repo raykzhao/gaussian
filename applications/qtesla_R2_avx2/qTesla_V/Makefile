@@ -27,20 +27,19 @@ ifeq "$(DEBUG)" "TRUE"
     DFLAG=-DDEBUG
 endif
 
-OBJECTS_ASM_I = objs_I/s_consts.o objs_I/poly_mul512.o objs/sparse_mul16.o
+OBJECTS_ASM_V = objs_V/s_consts.o objs/poly_mul2048.o objs/sparse_mul16.o
 OBJECTS_EXTRAS = objs/fips202x4.o objs/KeccakP-1600-times4-SIMD256.o objs/fastrandombytes.o
 
-OBJECTS_I = objs_I/sign.o objs_I/pack.o objs_I/sample.o objs_I/gauss.o objs_I/poly.o objs_I/consts.o $(OBJECTS_ASM_I) objs/fips202.o objs/random.o $(OBJECTS_EXTRAS)
+OBJECTS_V = objs_V/sign.o objs_V/pack.o objs_V/sample.o objs_V/gauss.o objs_V/poly.o objs_V/consts.o $(OBJECTS_ASM_V) objs/fips202.o objs/random.o $(OBJECTS_EXTRAS)
 SOURCE_TEST = tests/cpucycles.c tests/test_qtesla.c
 SOURCE_KATS_GEN  = tests/rng.c tests/PQCgenKAT_sign.c
 SOURCE_KATS_TEST = tests/rng.c tests/PQCtestKAT_sign.c
 
-all: lib_I tests
+all: lib_V tests
 
-objs_I/%.o: %.c
+objs_V/%.o: %.c
 	@mkdir -p $(@D)
-#	$(CC) $(CFLAGS) $(DFLAG) -D _qTESLA_I_ -S $< -o objs_I/$*.asm -masm=intel
-	$(CC) -c $(CFLAGS) $(DFLAG) -D _qTESLA_I_ $< -o $@
+	$(CC) -c $(CFLAGS) $(DFLAG) -D _qTESLA_V_ $< -o $@
 
 objs/random.o: random/random.c
 	@mkdir -p $(@D)
@@ -59,25 +58,24 @@ objs/KeccakP-1600-times4-SIMD256.o: sha3/keccak4x/KeccakP-1600-times4-SIMD256.c
 objs/fastrandombytes.o: fastrandombytes.c
 	$(CC) -c $(CFLAGS) fastrandombytes.c -o objs/fastrandombytes.o
 
-
-objs_I/poly_mul512.o: poly_mul512.S
+objs/poly_mul2048.o: poly_mul2048.S
 	@mkdir -p $(@D)
-	$(CC) -c $(CFLAGS) poly_mul512.S -o objs_I/poly_mul512.o
+	$(CC) -c $(CFLAGS) poly_mul2048.S -o objs/poly_mul2048.o
 
 objs/sparse_mul16.o: sparse_mul16.S
 	@mkdir -p $(@D)
 	$(CC) -c $(CFLAGS) sparse_mul16.S -o objs/sparse_mul16.o
 
-lib_I: $(OBJECTS_I)
-	rm -rf lib_I
-	mkdir lib_I
-	$(AR) lib_I/libqtesla.a $^
-	$(RANLIB) lib_I/libqtesla.a
+lib_V: $(OBJECTS_V)
+	rm -rf lib_V
+	mkdir lib_V
+	$(AR) lib_V/libqtesla.a $^
+	$(RANLIB) lib_V/libqtesla.a
 
-tests: lib_I
-	$(CC) $(CFLAGS) -L./lib_I -D _qTESLA_I_ $(SOURCE_TEST) $(DFLAG) -lqtesla $(LDFLAGS) -o test_qtesla-I $(ARM_SETTING)
-	$(CC) $(CFLAGS) -L./lib_I -D _qTESLA_I_ $(SOURCE_KATS_GEN) $(DFLAG) -lqtesla $(LDFLAGS) -o PQCgenKAT_sign-I $(ARM_SETTING)
-	$(CC) $(CFLAGS) -L./lib_I -D _qTESLA_I_ $(SOURCE_KATS_TEST) $(DFLAG) -lqtesla $(LDFLAGS) -o PQCtestKAT_sign-I $(ARM_SETTING)
+tests: lib_V
+	$(CC) $(CFLAGS) -L./lib_V -D _qTESLA_V_ $(SOURCE_TEST) $(DFLAG) -lqtesla $(LDFLAGS) -o test_qtesla-V $(ARM_SETTING)
+	$(CC) $(CFLAGS) -L./lib_V -D _qTESLA_V_ $(SOURCE_KATS_GEN) $(DFLAG) -lqtesla $(LDFLAGS) -o PQCgenKAT_sign-V $(ARM_SETTING)
+	$(CC) $(CFLAGS) -L./lib_V -D _qTESLA_V_ $(SOURCE_KATS_TEST) $(DFLAG) -lqtesla $(LDFLAGS) -o PQCtestKAT_sign-V $(ARM_SETTING)
 
 .PHONY: clean
 
