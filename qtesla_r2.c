@@ -129,7 +129,7 @@ typedef int64_t         sdigit_t;       // Signed 64-bit digit
  * @param    g      the accompanying sampling order array to sort together.
  * @param    n      the array size.
  */
-static void knuthMergeExchangeKG(sdigit_t a[/*n*CDT_COLS*/], int32_t g[/*n*/], size_t n) 
+static inline void knuthMergeExchangeKG(sdigit_t a[/*n*CDT_COLS*/], int32_t g[/*n*/], size_t n) 
 {
     size_t t = 1;      
     while (t < n - t) {
@@ -169,7 +169,7 @@ static void knuthMergeExchangeKG(sdigit_t a[/*n*CDT_COLS*/], int32_t g[/*n*/], s
  * @param    a      the sampling order array to sort in-place.
  * @param    n      the array size.
  */
-static void knuthMergeExchangeG(int32_t a[/*n*/], size_t n) 
+static inline void knuthMergeExchangeG(int32_t a[/*n*/], size_t n) 
 {
     size_t t = 1;
     while (t < n - t) {
