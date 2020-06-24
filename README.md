@@ -1,6 +1,6 @@
 # gaussian
 
-Moved to [gitlab](https://gitlab.com/raykzhao/gaussian).
+## Moved to [gitlab](https://gitlab.com/raykzhao/gaussian).
 
 This is the implementation source code for the paper: 
 
